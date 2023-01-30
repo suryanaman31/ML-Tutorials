@@ -1,27 +1,32 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
 import numpy as np
-import collections
 import pandas as pd
+import dtale
+from pathlib import Path
+import collections
+import timeit
+import warnings
+import matplotlib.pyplot as plt
 
-class Stability_Metrics:
-    
+warnings.simplefilter('ignore')
+root_path = str(Path.cwd()) + '/'
 
-    def __init__(self, df_dev, df_rev, feat_col_names, feat_data_types, output_col_names, buckettype='quantiles', buckets=10, axis=0):
+class Stability_Metrics:    
+
+    def __init__(self, df_dev, df_rev, feat_col_names = None, output_col_names = None, buckettype='quantiles', buckets=5, axis=0):
         self.df_dev = df_dev
         self.df_rev = df_rev
-        self.feat_col_names = feat_col_names
-        self.feat_data_types = feat_data_types
+        if feat_col_names:
+            self.feat_col_names = feat_col_names
+        else:
+            self.feat_col_names = self.df_dev.columns.tolist()
+        self.feat_data_types = self.df_dev.dtypes.astype(str).tolist()
         self.output_col_names = output_col_names
         self.buckettype = buckettype
         self.buckets = buckets
         self.axis = axis
         print("No. of feature columns in the dataset: "+str(len(self.feat_col_names)))
-        print("No. of output columns in the dataset: "+str(len(self.output_col_names)))
+        if self.output_col_names:
+            print("No. of output columns in the dataset: "+str(len(self.output_col_names)))
         self.data_conversion()
         self.calculate_metrics()
 
@@ -49,9 +54,9 @@ class Stability_Metrics:
 
             # Create separate lists of numerical (int64 and float64) and categorical (string) column names
             for i in self.feat_col_names:
-                if ((key_feat[i] == 'int64') | (key_feat[i] == 'float64')):
+                if ((key_feat[i] == 'int64') | (key_feat[i] == 'float64') | (key_feat[i] == 'int32') | (key_feat[i] == 'float32') | (key_feat[i] == 'int16') | (key_feat[i] == 'float16')):
                     numerical_feature_names.append(i)
-                elif ((key_feat[i] == 'object') | (key_feat[i] == 'bool') | (key_feat[i] == 'O')):
+                elif ((key_feat[i] == 'object') | (key_feat[i] == 'category') | (key_feat[i] == 'bool') | (key_feat[i] == 'O')):
                     categorical_feature_names.append(i)
             
             # Convert user-specified numerical columns to numeric data type (to ensure consistency)
@@ -71,15 +76,21 @@ class Stability_Metrics:
             rev_feat_categorical_temp = self.df_rev[categorical_feature_names].values
             
             # Create temporary numpy arrays containing values corresponding to output columns (they will be numerical)
-            for i in self.output_col_names:
-                dev_output_temp = self.df_dev[self.output_col_names].values 
-                rev_output_temp = self.df_rev[self.output_col_names].values
-           
-            # Creating a concatenated numpy array 
-            self.feat_col_names_new = numerical_feature_names + categorical_feature_names
-            self.all_col_names_new = numerical_feature_names + categorical_feature_names + self.output_col_names
-            np_concat_dev_temp = np.concatenate((dev_feat_numerical_temp, dev_feat_categorical_temp, dev_output_temp), axis=1)
-            np_concat_rev_temp = np.concatenate((rev_feat_numerical_temp, rev_feat_categorical_temp, rev_output_temp), axis=1)           
+            if self.output_col_names:
+                for i in self.output_col_names:
+                    dev_output_temp = self.df_dev[self.output_col_names].values 
+                    rev_output_temp = self.df_rev[self.output_col_names].values
+                
+                self.feat_col_names_new = numerical_feature_names + categorical_feature_names
+                self.all_col_names_new = numerical_feature_names + categorical_feature_names + self.output_col_names
+                np_concat_dev_temp = np.concatenate((dev_feat_numerical_temp, dev_feat_categorical_temp, dev_output_temp), axis=1)
+                np_concat_rev_temp = np.concatenate((rev_feat_numerical_temp, rev_feat_categorical_temp, rev_output_temp), axis=1)
+            else:
+                self.output_col_names = []
+                self.feat_col_names_new = numerical_feature_names + categorical_feature_names
+                self.all_col_names_new = numerical_feature_names + categorical_feature_names 
+                np_concat_dev_temp = np.concatenate((dev_feat_numerical_temp, dev_feat_categorical_temp), axis=1)
+                np_concat_rev_temp = np.concatenate((rev_feat_numerical_temp, rev_feat_categorical_temp), axis=1)
 
             # Converting to a dataframe to drop rows containing any NaN 
             df_concat_dev_temp = pd.DataFrame(np_concat_dev_temp)
@@ -89,7 +100,11 @@ class Stability_Metrics:
             
             len_num = len(numerical_feature_names)
             len_cat = len(categorical_feature_names)
-            len_output = len(self.output_col_names)
+            if self.output_col_names:
+                len_output = len(self.output_col_names)
+                
+            else:
+                len_output = 0
             
             # Creating final numpy arrays (to be used for stability metrics calculation)
             self.dev_feat_numerical = df_concat_dev_temp.values[:,:len_num]
@@ -186,7 +201,6 @@ class Stability_Metrics:
                rev_feat_numerical: numpy array of new numerical feature values (t = t)
                dev_feat_categorical: numpy array of original categorical feature values (t = 0)
                rev_feat_categorical: numpy array of new categorical feature values (t = t)
-
             Returns:
                csi_values: list of csi values for each feature column
             '''
@@ -196,7 +210,6 @@ class Stability_Metrics:
                 Input variables:
                    dev_feat_categorical: numpy array of original categorical feature values (t = 0)
                    rev_feat_categorical: numpy array of new categorical feature values (t = t)
-
                 Returns:
                    csi_categorical: list of csi values for each categorical feature column
                 '''
@@ -206,7 +219,6 @@ class Stability_Metrics:
                     Input variables:
                        dev_column: 1-D numpy array of original categorical feature value (t = 0)
                        rev_column: 1-D numpy array of new categorical feature value (t = t)
-
                     Returns:
                        csi_value: csi value for a single categorical feature column
                     '''
@@ -253,7 +265,6 @@ class Stability_Metrics:
                rev_feat_numerical: numpy array of new numerical feature values (t = t)
                dev_feat_categorical: numpy array of original categorical feature values (t = 0)
                rev_feat_categorical: numpy array of new categorical feature values (t = t)
-
             Returns:
                di_values: list of di values for each feature column
             '''            
@@ -263,7 +274,6 @@ class Stability_Metrics:
                 Input variables:
                    dev_feat_numerical: numpy array of original numerical feature values (t = 0)
                    rev_feat_numerical: numpy array of new numerical feature values (t = t)
-
                 Returns:
                    di_numerical: list of di values for numerical feature columns
                 '''            
@@ -286,7 +296,6 @@ class Stability_Metrics:
                 Input variables:
                    dev_feat_categorical: numpy array of original numerical feature values (t = 0)
                    rev_feat_categorical: numpy array of new numerical feature values (t = t)
-
                 Returns:
                    di_categorical: list of di values for categorical feature columns
                 '''            
@@ -318,25 +327,36 @@ class Stability_Metrics:
             return(di_values)
         
         try:
-            psi_values = calculate_psi(self.dev_output, self.rev_output)
+            if self.output_col_names:
+                psi_values = calculate_psi(self.dev_output, self.rev_output)
+                psi = {self.output_col_names[i]: psi_values[i] for i in range(len(self.output_col_names))}
             csi_values = calculate_csi(self.dev_feat_numerical, self.rev_feat_numerical, self.dev_feat_categorical, self.rev_feat_categorical)
-            di_values = calculate_di(self.dev_feat_numerical, self.rev_feat_numerical, self.dev_feat_categorical, self.rev_feat_categorical)
-            psi = {self.output_col_names[i]: psi_values[i] for i in range(len(self.output_col_names))} 
+            di_values = calculate_di(self.dev_feat_numerical, self.rev_feat_numerical, self.dev_feat_categorical, self.rev_feat_categorical) 
             csi = {self.feat_col_names_new[i]: csi_values[i] for i in range(len(self.feat_col_names_new))}
             di = {self.feat_col_names_new[i]: di_values[i] for i in range(len(self.feat_col_names_new))}
-            print("\nThe computed Stability Metrics are listed below:")
-            print("\nPSI values for " + str(len(psi_values)) + " output columns: ", psi)
-            print("\nCSI values for " + str(len(csi_values)) + " feature columns: ", csi)
-            print("\nDI values for " + str(len(csi_values)) + " feature columns: ", di)
-            return (psi,csi,di)
+            #print("\nThe computed Stability Metrics are listed below:")
+            #if self.output_col_names:
+                #print("\nPSI values for " + str(len(psi_values)) + " output columns: ", psi)
+            #print("\nCSI values for " + str(len(csi_values)) + " feature columns: ", csi)
+            #print("\nDI values for " + str(len(csi_values)) + " feature columns: ", di)
+            
+            # Rounf off values in dictionary
+            round_k = 3
+            if self.output_col_names:
+                while len(set(csi.keys()).intersection(set(psi.keys())))!=0:
+                    try:
+                        del csi[next(iter(set(csi.keys()).intersection(set(psi.keys()))))]
+                    except KeyError:
+                        pass
+                psi_rounded = {key : round(psi[key], round_k) for key in psi}
+                csi_rounded = {key : round(csi[key], round_k) for key in csi}
+                di_rounded = {key : round(di[key], round_k) for key in di}
+                return (psi_rounded,csi_rounded,di_rounded)
+            else:
+                csi_rounded = {key : round(csi[key], round_k) for key in csi}
+                di_rounded = {key : round(di[key], round_k) for key in di}
+                return (csi_rounded,di_rounded)
         
         except Exception as e:
             print("\nAn exception occurred during calculation of Stability Metrics:")
             print(e)
-
-
-# In[ ]:
-
-
-
-
